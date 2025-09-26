@@ -1,7 +1,19 @@
 import streamlit as st
-import requests
-import json
+import pandas as pd
+import pickle
+import numpy as np
 import plotly.graph_objects as go
+import os
+
+# --- Load Model ---
+try:
+    model_path = os.path.join("..", "baseline_model.pkl")  # adjust if needed
+    with open(model_path, 'rb') as file:
+        model = pickle.load(file)
+    st.success("✅ Model loaded successfully.")
+except FileNotFoundError:
+    st.error("❌ 'baseline_model.pkl' not found. Please train and save the model first.")
+    model = None
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -27,8 +39,6 @@ st.markdown("""
     .metric-label {font-size: 1.2rem; color: #374151; font-weight: 600;}
     .nova-header {font-size: 2.5rem; font-weight: bold; color: #00B14F;}
     .nova-subheader {font-size: 1.1rem; color: #6B7280;}
-            
-    
 </style>
 """, unsafe_allow_html=True)
 
@@ -63,105 +73,103 @@ cancellation_rate_percent = st.sidebar.slider("Cancellation Rate (%)", 1, 15, 5)
 peak_hour_percentage_percent = st.sidebar.slider("Peak Hour Driving (%)", 10, 100, 50)
 grab_pay_usage_rate_percent = st.sidebar.slider("GrabPay Usage Rate (%)", 10, 90, 60)
 
-# Convert percentages to 0-1 for API
+# Convert percentages to 0-1
 acceptance_rate = acceptance_rate_percent / 100
 cancellation_rate = cancellation_rate_percent / 100
 peak_hour_percentage = peak_hour_percentage_percent / 100
 grab_pay_usage_rate = grab_pay_usage_rate_percent / 100
 
-# --- Input Data for API ---
-input_data = {
-    "tenure_months": tenure_months,
-    "city_district": city_district,
-    "avg_customer_rating": avg_customer_rating,
-    "safety_score": safety_score,
-    "avg_weekly_earnings": avg_weekly_earnings,
-    "avg_weekly_trips": avg_weekly_trips,
-    "acceptance_rate": acceptance_rate,
-    "cancellation_rate": cancellation_rate,
-    "peak_hour_percentage": peak_hour_percentage,
-    "grab_pay_usage_rate": grab_pay_usage_rate,
-    "earnings_stability_score": earnings_stability_score
-}
-
 # --- Main Dashboard ---
 st.header("📊 Prediction Dashboard")
 
 if st.button("🚀 Calculate Nova Score"):
-    with st.spinner("⚡ Crunching numbers with AI..."):
-        try:
-            api_url = "http://127.0.0.1:5000/predict"
-            response = requests.post(api_url, data=json.dumps(input_data), headers={'Content-Type': 'application/json'})
+    if model is None:
+        st.error("Model not loaded. Cannot predict.")
+    else:
+        # --- Prepare Input ---
+        input_df = pd.DataFrame([{
+            "tenure_months": tenure_months,
+            "city_district": city_district,
+            "avg_customer_rating": avg_customer_rating,
+            "safety_score": safety_score,
+            "avg_weekly_earnings": avg_weekly_earnings,
+            "avg_weekly_trips": avg_weekly_trips,
+            "acceptance_rate": acceptance_rate,
+            "cancellation_rate": cancellation_rate,
+            "peak_hour_percentage": peak_hour_percentage,
+            "grab_pay_usage_rate": grab_pay_usage_rate,
+            "earnings_stability_score": earnings_stability_score
+        }])
 
-            if response.status_code == 200:
-                result = response.json()
+        # --- Feature Engineering (same as API) ---
+        input_df['earnings_per_trip'] = input_df['avg_weekly_earnings'] / input_df['avg_weekly_trips']
+        input_df['rating_x_tenure'] = input_df['avg_customer_rating'] * input_df['tenure_months']
+        input_processed = pd.get_dummies(input_df, columns=['city_district'], drop_first=True)
 
-                # Safely parse repayment probability
-                repayment_prob = result['repayment_probability']
-                if isinstance(repayment_prob, str):
-                    repayment_prob = repayment_prob.replace('%','')
-                repayment_prob = float(repayment_prob)  # ensure numeric
+        # Align with model training columns
+        training_cols = model.get_booster().feature_names
+        for col in training_cols:
+            if col not in input_processed.columns:
+                input_processed[col] = 0
+        input_processed = input_processed[training_cols]
 
-                # --- Layout Columns ---
-                col1, col2 = st.columns(2)
+        # --- Prediction ---
+        repayment_prob = model.predict_proba(input_processed)[:, 0]
+        nova_score = 300 + (repayment_prob[0] * 550)
 
-                # --- Nova Score Gauge ---
-                with col1:
-                    st.markdown("<div class='score-card'>", unsafe_allow_html=True)
-                    st.markdown("<p class='metric-label'>Nova Score</p>", unsafe_allow_html=True)
-                    fig = go.Figure(go.Indicator(
-                        mode="gauge+number",
-                        value=result['nova_score'],
-                        title={'text': "Credit Score"},
-                        gauge={
-                            'axis': {'range': [300, 850]},
-                            'bar': {'color': "#00B14F"},
-                            'steps': [
-                                {'range': [300, 580], 'color': "#F87171"},
-                                {'range': [580, 670], 'color': "#FBBF24"},
-                                {'range': [670, 850], 'color': "#34D399"}]
-                        }
-                    ))
-                    st.plotly_chart(fig, use_container_width=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+        # --- Layout Columns ---
+        col1, col2 = st.columns(2)
 
-                # --- Repayment Probability + Radar Chart ---
-                with col2:
-                    st.markdown("<div class='score-card'>", unsafe_allow_html=True)
-                    st.markdown("<p class='metric-label'>Repayment Probability</p>", unsafe_allow_html=True)
-                    st.progress(int(repayment_prob))
-                    st.write(f"**{repayment_prob:.2f}%** chance of repayment")
+        # Nova Score Gauge
+        with col1:
+            st.markdown("<div class='score-card'>", unsafe_allow_html=True)
+            st.markdown("<p class='metric-label'>Nova Score</p>", unsafe_allow_html=True)
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=int(nova_score),
+                title={'text': "Credit Score"},
+                gauge={
+                    'axis': {'range': [300, 850]},
+                    'bar': {'color': "#00B14F"},
+                    'steps': [
+                        {'range': [300, 580], 'color': "#F87171"},
+                        {'range': [580, 670], 'color': "#FBBF24"},
+                        {'range': [670, 850], 'color': "#34D399"}]
+                }
+            ))
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-                    # Radar Chart
-                    categories = ['Safety', 'Reliability', 'Engagement', 'GrabPay', 'Earnings Stability']
-                    values = [
-                        safety_score,
-                        acceptance_rate_percent,
-                        peak_hour_percentage_percent,
-                        grab_pay_usage_rate_percent,
-                        min(100, earnings_stability_score/50)  # scale to ~100
-                    ]
-                    radar_fig = go.Figure()
-                    radar_fig.add_trace(go.Scatterpolar(
-                        r=values,
-                        theta=categories,
-                        fill='toself',
-                        name='Partner Profile',
-                        line_color="#00B14F"
-                    ))
-                    radar_fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0,100])))
-                    st.plotly_chart(radar_fig, use_container_width=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+        # Repayment Probability + Radar
+        with col2:
+            st.markdown("<div class='score-card'>", unsafe_allow_html=True)
+            st.markdown("<p class='metric-label'>Repayment Probability</p>", unsafe_allow_html=True)
+            st.progress(int(repayment_prob[0] * 100))
+            st.write(f"**{repayment_prob[0]*100:.2f}%** chance of repayment")
 
-                # --- Success Feedback ---
-                st.balloons()
-                st.success("⚖️ Fairness Guarantee: Score generated with bias mitigation for equitable outcomes.")
+            categories = ['Safety', 'Reliability', 'Engagement', 'GrabPay', 'Earnings Stability']
+            values = [
+                safety_score,
+                acceptance_rate_percent,
+                peak_hour_percentage_percent,
+                grab_pay_usage_rate_percent,
+                min(100, earnings_stability_score / 50)  # scale
+            ]
+            radar_fig = go.Figure()
+            radar_fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=categories,
+                fill='toself',
+                name='Partner Profile',
+                line_color="#00B14F"
+            ))
+            radar_fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0,100])))
+            st.plotly_chart(radar_fig, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-            else:
-                st.error(f"Error from API: {response.text}")
-
-        except requests.exceptions.ConnectionError:
-            st.error("❌ Connection Error: Could not connect to API. Run `app.py` first.")
+        # Success
+        st.balloons()
+        st.success("⚖️ Fairness Guarantee: Score generated with bias mitigation for equitable outcomes.")
 
 else:
     st.info("👈 Adjust parameters in the sidebar and click **Calculate Nova Score** to see results.")
