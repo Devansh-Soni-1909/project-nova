@@ -7,7 +7,7 @@ import os
 
 # --- Load Model ---
 try:
-    model_path = os.path.join("..", "baseline_model.pkl")  # adjust if needed
+    model_path = "baseline_model.pkl"  # adjust if needed
     with open(model_path, 'rb') as file:
         model = pickle.load(file)
     st.success("✅ Model loaded successfully.")
