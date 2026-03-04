@@ -82,7 +82,7 @@ grab_pay_usage_rate = grab_pay_usage_rate_percent / 100
 # --- Main Dashboard ---
 st.header("📊 Prediction Dashboard")
 
-if st.button("🚀 Calculate Nova Score"):
+if st.button("🚀 Calculate Credence Score"):
     if model is None:
         st.error("Model not loaded. Cannot predict.")
     else:
