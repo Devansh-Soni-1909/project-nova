@@ -10,14 +10,14 @@ try:
     model_path = os.path.join("app", "baseline_model.pkl")  # adjust if needed
     with open(model_path, 'rb') as file:
         model = pickle.load(file)
-    st.success("✅ Model loaded successfully.")
+    # st.success("✅ Model loaded successfully.")
 except FileNotFoundError:
     st.error("❌ 'baseline_model.pkl' not found. Please train and save the model first.")
     model = None
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Project Nova | GrabHack",
+    page_title="Credence | GrabHack",
     page_icon="🚀",
     layout="wide"
 )
