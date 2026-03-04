@@ -43,7 +43,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Header ---
-st.markdown("<h1 class='nova-header'>✨ Project Nova</h1>", unsafe_allow_html=True)
+st.markdown("<h1 class='nova-header'>✨ Credence</h1>", unsafe_allow_html=True)
 st.markdown("<p class='nova-subheader'>Interactive & Equitable Credit Scoring Engine - GrabHack 2025</p>", unsafe_allow_html=True)
 st.markdown("---")
 
